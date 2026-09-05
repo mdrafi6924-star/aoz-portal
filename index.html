@@ -84,6 +84,9 @@
   .notice-card p{ margin:0; font-size:14px; color:var(--ink); }
   .notice-card .meta{ font-size:11px; color:#8a7fae; margin-top:8px; display:flex; justify-content:space-between; align-items:center; }
   .notice-card .del{ background:none; border:none; color: var(--danger); font-size:12px; text-decoration:underline; padding:0; }
+  .chat-bubble{ max-width:75%; padding:9px 13px; border-radius:10px; font-size:14px; }
+  .chat-bubble.me{ align-self:flex-end; background: var(--violet); color:#fff; }
+  .chat-bubble.them{ align-self:flex-start; background: var(--paper-2); color: var(--ink); }
   footer{ text-align:center; color:#8a7fae; font-size:12px; margin-top:20px; }
 </style>
 </head>
@@ -140,6 +143,7 @@
       <button data-tab="typing" class="active">টাইপিং টেস্ট</button>
       <button data-tab="leaderboard">লিডারবোর্ড</button>
       <button data-tab="notices">নোটিশ বোর্ড</button>
+      <button data-tab="messaging">মেসেজিং</button>
       <button data-tab="students" id="studentsTabBtn" class="hidden">শিক্ষার্থী তালিকা</button>
     </div>
 
@@ -185,6 +189,22 @@
         <button class="authBtn" id="noticeSubmit" style="width:auto;padding:10px 22px;">প্রকাশ করুন</button>
       </div>
       <div id="noticesList"></div>
+    </div>
+
+    <div id="messagingTab" class="hidden">
+      <div class="card" style="margin-bottom:14px;" id="teacherStudentPicker">
+        <div class="field" style="margin-bottom:0;">
+          <label>শিক্ষার্থী বেছে নিন</label>
+          <select id="studentSelect" style="width:100%;padding:10px 12px;border:1px solid var(--rule);border-radius:6px;font-size:15px;background:#fbf9f2;"></select>
+        </div>
+      </div>
+      <div class="card">
+        <div id="chatMessages" style="max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="chatInput" placeholder="মেসেজ লিখুন…" style="flex:1;padding:10px 12px;border:1px solid var(--rule);border-radius:6px;font-size:15px;background:#fbf9f2;">
+          <button class="authBtn" id="chatSend" style="width:auto;padding:10px 20px;">পাঠান</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -289,6 +309,7 @@ onAuthStateChanged(auth, async (user) => {
     const isTeacher = currentUserData.role === 'teacher';
     document.getElementById('studentsTabBtn').classList.toggle('hidden', !isTeacher);
     document.getElementById('noticeForm').classList.toggle('hidden', !isTeacher);
+    document.getElementById('teacherStudentPicker').classList.toggle('hidden', !isTeacher);
     document.querySelector('.tabs button[data-tab="typing"]').classList.toggle('hidden', isTeacher);
     if(isTeacher){
       document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
@@ -320,21 +341,76 @@ document.querySelectorAll('.tabs button').forEach(btn => {
     document.getElementById('leaderboardTab').classList.toggle('hidden', tab !== 'leaderboard');
     document.getElementById('studentsTab').classList.toggle('hidden', tab !== 'students');
     document.getElementById('noticesTab').classList.toggle('hidden', tab !== 'notices');
+    document.getElementById('messagingTab').classList.toggle('hidden', tab !== 'messaging');
+    if(tab === 'messaging') openChatForCurrentContext();
   });
 });
 
-/* ---------- Students list (teacher view) ---------- */
+/* ---------- Students list (teacher view) + student dropdown for chat ---------- */
 const studentsQuery = query(collection(db, 'users'), orderBy('bestWpm', 'desc'), limit(100));
 onSnapshot(studentsQuery, (snap) => {
   const body = document.getElementById('studentsBody');
+  const select = document.getElementById('studentSelect');
   body.innerHTML = '';
+  const prevSelected = select.value;
+  select.innerHTML = '';
   snap.forEach(docSnap => {
     const d = docSnap.data();
     if(d.role === 'teacher') return;
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${d.name || ''}</td><td>${d.email || ''}</td><td>${d.bestWpm || 0}</td><td>${d.bestAcc || 100}%</td>`;
     body.appendChild(tr);
+
+    const opt = document.createElement('option');
+    opt.value = docSnap.id;
+    opt.textContent = d.name || d.email || docSnap.id;
+    select.appendChild(opt);
   });
+  if(prevSelected && [...select.options].some(o => o.value === prevSelected)){
+    select.value = prevSelected;
+  } else if(select.options.length > 0 && document.getElementById('messagingTab').classList.contains('hidden') === false){
+    openChatForCurrentContext();
+  }
+});
+
+document.getElementById('studentSelect').addEventListener('change', () => openChatForCurrentContext());
+
+/* ---------- Messaging (chat) ---------- */
+let chatUnsub = null;
+let activeStudentUid = null;
+
+function openChatForCurrentContext(){
+  if(!currentUser || !currentUserData) return;
+  const isTeacher = currentUserData.role === 'teacher';
+  const studentUid = isTeacher ? document.getElementById('studentSelect').value : currentUser.uid;
+  if(!studentUid) return;
+  if(chatUnsub) { chatUnsub(); chatUnsub = null; }
+  activeStudentUid = studentUid;
+
+  const msgsQuery = query(collection(db, 'chats', studentUid, 'messages'), orderBy('at'));
+  chatUnsub = onSnapshot(msgsQuery, (snap) => {
+    const box = document.getElementById('chatMessages');
+    box.innerHTML = '';
+    snap.forEach(docSnap => {
+      const d = docSnap.data();
+      const bubble = document.createElement('div');
+      const mine = d.senderUid === currentUser.uid;
+      bubble.className = 'chat-bubble ' + (mine ? 'me' : 'them');
+      bubble.textContent = d.text || '';
+      box.appendChild(bubble);
+    });
+    box.scrollTop = box.scrollHeight;
+  });
+}
+
+document.getElementById('chatSend').addEventListener('click', async () => {
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if(!text || !activeStudentUid || !currentUser) return;
+  await addDoc(collection(db, 'chats', activeStudentUid, 'messages'), {
+    text, senderUid: currentUser.uid, senderRole: currentUserData.role, at: serverTimestamp()
+  });
+  input.value = '';
 });
 
 /* ---------- Notice board ---------- */
