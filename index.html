@@ -79,6 +79,11 @@
   tr.me{ background:#efe8fb; }
 
   .hidden{ display:none !important; }
+  .notice-card{ background:#fff; border:1px solid var(--rule); border-radius:8px; padding:14px 16px; margin-bottom:10px; }
+  .notice-card h4{ margin:0 0 6px; color: var(--violet); font-size:15px; }
+  .notice-card p{ margin:0; font-size:14px; color:var(--ink); }
+  .notice-card .meta{ font-size:11px; color:#8a7fae; margin-top:8px; display:flex; justify-content:space-between; align-items:center; }
+  .notice-card .del{ background:none; border:none; color: var(--danger); font-size:12px; text-decoration:underline; padding:0; }
   footer{ text-align:center; color:#8a7fae; font-size:12px; margin-top:20px; }
 </style>
 </head>
@@ -95,6 +100,10 @@
     </div>
     <div class="who hidden" id="whoBar">
       <span id="whoLabel"></span>
+      <div class="role-toggle" id="langToggle" style="display:flex;gap:4px;">
+        <button data-lang="bn" class="active" style="padding:6px 10px;border-radius:6px;border:1px solid var(--gold);background:var(--gold);color:var(--ink);font-size:12px;">বাংলা</button>
+        <button data-lang="en" style="padding:6px 10px;border-radius:6px;border:1px solid #4a3a6b;background:var(--bg-2);color:#c9bfe0;font-size:12px;">English</button>
+      </div>
       <button id="logoutBtn">লগআউট</button>
     </div>
   </header>
@@ -127,9 +136,11 @@
 
   <!-- APP SCREEN -->
   <div id="appScreen" class="hidden">
-    <div class="tabs">
+    <div class="tabs" id="tabsBar">
       <button data-tab="typing" class="active">টাইপিং টেস্ট</button>
       <button data-tab="leaderboard">লিডারবোর্ড</button>
+      <button data-tab="notices">নোটিশ বোর্ড</button>
+      <button data-tab="students" id="studentsTabBtn" class="hidden">শিক্ষার্থী তালিকা</button>
     </div>
 
     <div id="typingTab">
@@ -157,6 +168,24 @@
         </table>
       </div>
     </div>
+
+    <div id="studentsTab" class="hidden">
+      <div class="card">
+        <table>
+          <thead><tr><th>নাম</th><th>ইমেইল</th><th>সেরা WPM</th><th>নির্ভুলতা</th></tr></thead>
+          <tbody id="studentsBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="noticesTab" class="hidden">
+      <div class="card" id="noticeForm" style="margin-bottom:14px;">
+        <div class="field"><label>শিরোনাম</label><input type="text" id="noticeTitle" placeholder="নোটিশের শিরোনাম"></div>
+        <div class="field"><label>বিস্তারিত</label><input type="text" id="noticeBody" placeholder="নোটিশের বিস্তারিত লিখুন"></div>
+        <button class="authBtn" id="noticeSubmit" style="width:auto;padding:10px 22px;">প্রকাশ করুন</button>
+      </div>
+      <div id="noticesList"></div>
+    </div>
   </div>
 
   <footer>Abdullah Online Zone and Training Center · Firebase দিয়ে চালিত</footer>
@@ -170,7 +199,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, getDoc, addDoc, collection,
-  query, orderBy, limit, onSnapshot
+  query, orderBy, limit, onSnapshot, deleteDoc, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -256,7 +285,23 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('whoBar').classList.remove('hidden');
     document.getElementById('whoLabel').textContent =
       currentUserData.name + ' (' + (currentUserData.role === 'teacher' ? 'প্রশিক্ষক' : 'শিক্ষার্থী') + ')';
-    resetTest(true);
+
+    const isTeacher = currentUserData.role === 'teacher';
+    document.getElementById('studentsTabBtn').classList.toggle('hidden', !isTeacher);
+    document.getElementById('noticeForm').classList.toggle('hidden', !isTeacher);
+    document.querySelector('.tabs button[data-tab="typing"]').classList.toggle('hidden', isTeacher);
+    if(isTeacher){
+      document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+      document.querySelector('.tabs button[data-tab="students"]').classList.add('active');
+      document.getElementById('typingTab').classList.add('hidden');
+      document.getElementById('leaderboardTab').classList.add('hidden');
+      document.getElementById('studentsTab').classList.remove('hidden');
+    } else {
+      document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+      document.querySelector('.tabs button[data-tab="typing"]').classList.add('active');
+      document.getElementById('typingTab').classList.remove('hidden');
+      resetTest(true);
+    }
   } else {
     currentUserData = null;
     document.getElementById('authScreen').classList.remove('hidden');
@@ -273,7 +318,81 @@ document.querySelectorAll('.tabs button').forEach(btn => {
     const tab = btn.dataset.tab;
     document.getElementById('typingTab').classList.toggle('hidden', tab !== 'typing');
     document.getElementById('leaderboardTab').classList.toggle('hidden', tab !== 'leaderboard');
+    document.getElementById('studentsTab').classList.toggle('hidden', tab !== 'students');
+    document.getElementById('noticesTab').classList.toggle('hidden', tab !== 'notices');
   });
+});
+
+/* ---------- Students list (teacher view) ---------- */
+const studentsQuery = query(collection(db, 'users'), orderBy('bestWpm', 'desc'), limit(100));
+onSnapshot(studentsQuery, (snap) => {
+  const body = document.getElementById('studentsBody');
+  body.innerHTML = '';
+  snap.forEach(docSnap => {
+    const d = docSnap.data();
+    if(d.role === 'teacher') return;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${d.name || ''}</td><td>${d.email || ''}</td><td>${d.bestWpm || 0}</td><td>${d.bestAcc || 100}%</td>`;
+    body.appendChild(tr);
+  });
+});
+
+/* ---------- Notice board ---------- */
+const noticesQuery = query(collection(db, 'notices'), orderBy('at', 'desc'), limit(50));
+onSnapshot(noticesQuery, (snap) => {
+  const list = document.getElementById('noticesList');
+  list.innerHTML = '';
+  if(snap.empty){
+    list.innerHTML = '<p style="color:#c9bfe0;">কোনো নোটিশ নেই।</p>';
+    return;
+  }
+  snap.forEach(docSnap => {
+    const d = docSnap.data();
+    const div = document.createElement('div');
+    div.className = 'notice-card';
+    const dateStr = d.at && d.at.toDate ? d.at.toDate().toLocaleString('bn-BD') : '';
+    const isTeacher = currentUserData && currentUserData.role === 'teacher';
+    div.innerHTML = `
+      <h4>${d.title || ''}</h4>
+      <p>${d.body || ''}</p>
+      <div class="meta">
+        <span>${dateStr}</span>
+        ${isTeacher ? `<button class="del" data-id="${docSnap.id}">মুছে ফেলুন</button>` : ''}
+      </div>`;
+    list.appendChild(div);
+  });
+  list.querySelectorAll('.del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await deleteDoc(doc(db, 'notices', btn.dataset.id));
+    });
+  });
+});
+
+document.getElementById('noticeSubmit').addEventListener('click', async () => {
+  const title = document.getElementById('noticeTitle').value.trim();
+  const body = document.getElementById('noticeBody').value.trim();
+  if(!title || !body) return;
+  await addDoc(collection(db, 'notices'), {
+    title, body, at: serverTimestamp(), byUid: currentUser.uid, byName: currentUserData.name
+  });
+  document.getElementById('noticeTitle').value = '';
+  document.getElementById('noticeBody').value = '';
+});
+
+/* ---------- Language toggle ---------- */
+let uiLang = 'bn';
+document.getElementById('langToggle').addEventListener('click', (e) => {
+  if(e.target.tagName !== 'BUTTON') return;
+  uiLang = e.target.dataset.lang;
+  [...document.getElementById('langToggle').children].forEach(b => {
+    const active = b.dataset.lang === uiLang;
+    b.style.background = active ? 'var(--gold)' : 'var(--bg-2)';
+    b.style.color = active ? 'var(--ink)' : '#c9bfe0';
+    b.style.borderColor = active ? 'var(--gold)' : '#4a3a6b';
+  });
+  inputEl.placeholder = uiLang === 'en' ? 'Start typing here…' : 'এখানে টাইপ করা শুরু করুন…';
+  document.getElementById('restart').textContent = uiLang === 'en' ? 'New text' : 'নতুন লেখা';
+  resetTest(true);
 });
 
 /* ---------- Leaderboard (live) ---------- */
@@ -293,13 +412,22 @@ onSnapshot(lbQuery, (snap) => {
 });
 
 /* ---------- Typing test ---------- */
-const TEXTS = [
-  "গ্রামের পুকুরপাড়ে সন্ধ্যাবেলা বাতাসে হালকা কুয়াশা মিশে থাকত, আর দূরে কোথাও শোনা যেত রাখালের বাঁশির সুর।",
-  "মায়ের হাতের রান্নার গন্ধ পেলেই মনে হয় সারাদিনের ক্লান্তি এক নিমেষে মিলিয়ে গেছে।",
-  "নতুন বই খুললেই প্রথম পাতার গন্ধটা আমাকে সবসময় ছেলেবেলার কথা মনে করিয়ে দেয়।",
-  "The quick brown fox jumps over the lazy dog. Practice daily to improve your typing speed.",
-  "A good cup of tea, a comfortable chair, and an hour of silence can fix almost any bad morning."
-];
+const TEXTS = {
+  bn: [
+    "গ্রামের পুকুরপাড়ে সন্ধ্যাবেলা বাতাসে হালকা কুয়াশা মিশে থাকত, আর দূরে কোথাও শোনা যেত রাখালের বাঁশির সুর।",
+    "মায়ের হাতের রান্নার গন্ধ পেলেই মনে হয় সারাদিনের ক্লান্তি এক নিমেষে মিলিয়ে গেছে।",
+    "নতুন বই খুললেই প্রথম পাতার গন্ধটা আমাকে সবসময় ছেলেবেলার কথা মনে করিয়ে দেয়।",
+    "শহরের কোলাহল ছেড়ে নদীর ধারে বসে থাকলে মনে হয় সময় যেন থমকে গেছে।",
+    "প্রতিদিন একটু একটু চর্চা করলে যেকোনো কঠিন কাজও একসময় সহজ হয়ে যায়।"
+  ],
+  en: [
+    "The quiet library smelled of old paper and warm dust, and every footstep on the wooden floor echoed like a small secret.",
+    "A good cup of tea, a comfortable chair, and an hour of silence can fix almost any bad morning.",
+    "Somewhere between the first draft and the final version, the story finally learned how to breathe on its own.",
+    "The fishermen returned before sunrise, their boats heavy with silver and their hands raw from the cold rope.",
+    "Learning to type quickly is less about speed and more about trusting your fingers to remember the way."
+  ]
+};
 
 let duration = 30, timeLeft = duration, timer = null, started = false, passageText = "";
 const passageEl = document.getElementById('passage');
@@ -310,7 +438,7 @@ const statTime = document.getElementById('statTime');
 const statErr = document.getElementById('statErr');
 const resultBanner = document.getElementById('resultBanner');
 
-function pickPassage(){ return TEXTS[Math.floor(Math.random()*TEXTS.length)]; }
+function pickPassage(){ const arr = TEXTS[uiLang] || TEXTS.bn; return arr[Math.floor(Math.random()*arr.length)]; }
 
 function renderPassage(){
   passageEl.innerHTML = "";
