@@ -87,6 +87,12 @@
   .chat-bubble{ max-width:75%; padding:9px 13px; border-radius:10px; font-size:14px; }
   .chat-bubble.me{ align-self:flex-end; background: var(--violet); color:#fff; }
   .chat-bubble.them{ align-self:flex-start; background: var(--paper-2); color: var(--ink); }
+  .asg-card{ background:#fff; border:1px solid var(--rule); border-radius:8px; padding:14px 16px; margin-bottom:12px; }
+  .asg-card h4{ margin:0 0 6px; color: var(--violet); font-size:15px; }
+  .asg-card p{ margin:0 0 10px; font-size:14px; color:var(--ink); }
+  .asg-card input{ width:100%; padding:9px 11px; border:1px solid var(--rule); border-radius:6px; font-size:14px; background:#fbf9f2; margin-bottom:8px; }
+  .asg-card .submitBtn{ background: var(--violet); color:#fff; border:none; padding:8px 16px; border-radius:6px; font-size:13px; }
+  .asg-card .subrow{ display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:6px 0; border-top:1px solid var(--rule); }
   footer{ text-align:center; color:#8a7fae; font-size:12px; margin-top:20px; }
 </style>
 </head>
@@ -144,6 +150,7 @@
       <button data-tab="leaderboard">লিডারবোর্ড</button>
       <button data-tab="notices">নোটিশ বোর্ড</button>
       <button data-tab="messaging">মেসেজিং</button>
+      <button data-tab="assignments">অ্যাসাইনমেন্ট</button>
       <button data-tab="students" id="studentsTabBtn" class="hidden">শিক্ষার্থী তালিকা</button>
     </div>
 
@@ -205,6 +212,15 @@
           <button class="authBtn" id="chatSend" style="width:auto;padding:10px 20px;">পাঠান</button>
         </div>
       </div>
+    </div>
+
+    <div id="assignmentsTab" class="hidden">
+      <div class="card" id="assignmentForm" style="margin-bottom:14px;">
+        <div class="field"><label>শিরোনাম</label><input type="text" id="asgTitle" placeholder="অ্যাসাইনমেন্টের শিরোনাম"></div>
+        <div class="field"><label>বিবরণ</label><input type="text" id="asgDesc" placeholder="কী করতে হবে লিখুন"></div>
+        <button class="authBtn" id="asgSubmit" style="width:auto;padding:10px 22px;">প্রকাশ করুন</button>
+      </div>
+      <div id="assignmentsList"></div>
     </div>
   </div>
 
@@ -310,6 +326,8 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById('studentsTabBtn').classList.toggle('hidden', !isTeacher);
     document.getElementById('noticeForm').classList.toggle('hidden', !isTeacher);
     document.getElementById('teacherStudentPicker').classList.toggle('hidden', !isTeacher);
+    document.getElementById('assignmentForm').classList.toggle('hidden', !isTeacher);
+    renderNotices();
     document.querySelector('.tabs button[data-tab="typing"]').classList.toggle('hidden', isTeacher);
     if(isTeacher){
       document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
@@ -342,6 +360,7 @@ document.querySelectorAll('.tabs button').forEach(btn => {
     document.getElementById('studentsTab').classList.toggle('hidden', tab !== 'students');
     document.getElementById('noticesTab').classList.toggle('hidden', tab !== 'notices');
     document.getElementById('messagingTab').classList.toggle('hidden', tab !== 'messaging');
+    document.getElementById('assignmentsTab').classList.toggle('hidden', tab !== 'assignments');
     if(tab === 'messaging') openChatForCurrentContext();
   });
 });
@@ -393,11 +412,26 @@ function openChatForCurrentContext(){
     box.innerHTML = '';
     snap.forEach(docSnap => {
       const d = docSnap.data();
-      const bubble = document.createElement('div');
       const mine = d.senderUid === currentUser.uid;
+      const wrap = document.createElement('div');
+      wrap.style.alignSelf = mine ? 'flex-end' : 'flex-start';
+      wrap.style.display = 'flex';
+      wrap.style.flexDirection = 'column';
+      wrap.style.alignItems = mine ? 'flex-end' : 'flex-start';
+      const bubble = document.createElement('div');
       bubble.className = 'chat-bubble ' + (mine ? 'me' : 'them');
       bubble.textContent = d.text || '';
-      box.appendChild(bubble);
+      wrap.appendChild(bubble);
+      if(mine){
+        const delBtn = document.createElement('button');
+        delBtn.textContent = 'মুছে ফেলুন';
+        delBtn.style.cssText = 'background:none;border:none;color:#8c2f3f;font-size:11px;text-decoration:underline;padding:2px 4px;cursor:pointer;';
+        delBtn.addEventListener('click', async () => {
+          await deleteDoc(doc(db, 'chats', studentUid, 'messages', docSnap.id));
+        });
+        wrap.appendChild(delBtn);
+      }
+      box.appendChild(wrap);
     });
     box.scrollTop = box.scrollHeight;
   });
@@ -414,20 +448,21 @@ document.getElementById('chatSend').addEventListener('click', async () => {
 });
 
 /* ---------- Notice board ---------- */
-const noticesQuery = query(collection(db, 'notices'), orderBy('at', 'desc'), limit(50));
-onSnapshot(noticesQuery, (snap) => {
+let latestNoticesSnap = null;
+function renderNotices(){
+  if(!latestNoticesSnap) return;
   const list = document.getElementById('noticesList');
   list.innerHTML = '';
-  if(snap.empty){
+  if(latestNoticesSnap.empty){
     list.innerHTML = '<p style="color:#c9bfe0;">কোনো নোটিশ নেই।</p>';
     return;
   }
-  snap.forEach(docSnap => {
+  const isTeacher = currentUserData && currentUserData.role === 'teacher';
+  latestNoticesSnap.forEach(docSnap => {
     const d = docSnap.data();
     const div = document.createElement('div');
     div.className = 'notice-card';
     const dateStr = d.at && d.at.toDate ? d.at.toDate().toLocaleString('bn-BD') : '';
-    const isTeacher = currentUserData && currentUserData.role === 'teacher';
     div.innerHTML = `
       <h4>${d.title || ''}</h4>
       <p>${d.body || ''}</p>
@@ -442,6 +477,11 @@ onSnapshot(noticesQuery, (snap) => {
       await deleteDoc(doc(db, 'notices', btn.dataset.id));
     });
   });
+}
+const noticesQuery = query(collection(db, 'notices'), orderBy('at', 'desc'), limit(50));
+onSnapshot(noticesQuery, (snap) => {
+  latestNoticesSnap = snap;
+  renderNotices();
 });
 
 document.getElementById('noticeSubmit').addEventListener('click', async () => {
@@ -453,6 +493,82 @@ document.getElementById('noticeSubmit').addEventListener('click', async () => {
   });
   document.getElementById('noticeTitle').value = '';
   document.getElementById('noticeBody').value = '';
+});
+
+/* ---------- Assignments ---------- */
+const assignmentsQuery = query(collection(db, 'assignments'), orderBy('at', 'desc'), limit(50));
+onSnapshot(assignmentsQuery, (snap) => {
+  const list = document.getElementById('assignmentsList');
+  list.innerHTML = '';
+  if(snap.empty){
+    list.innerHTML = '<p style="color:#c9bfe0;">কোনো অ্যাসাইনমেন্ট নেই।</p>';
+    return;
+  }
+  const isTeacher = currentUserData && currentUserData.role === 'teacher';
+  snap.forEach(docSnap => {
+    const d = docSnap.data();
+    const card = document.createElement('div');
+    card.className = 'asg-card';
+    card.innerHTML = `<h4>${d.title || ''}</h4><p>${d.description || ''}</p>`;
+
+    if(isTeacher){
+      const subList = document.createElement('div');
+      subList.innerHTML = '<div style="font-size:12px;color:#8a7fae;margin-top:6px;">জমাসমূহ লোড হচ্ছে…</div>';
+      card.appendChild(subList);
+      onSnapshot(collection(db, 'assignments', docSnap.id, 'submissions'), (subSnap) => {
+        subList.innerHTML = '';
+        if(subSnap.empty){
+          subList.innerHTML = '<div style="font-size:12px;color:#8a7fae;">এখনো কেউ জমা দেয়নি।</div>';
+          return;
+        }
+        subSnap.forEach(s => {
+          const sd = s.data();
+          const row = document.createElement('div');
+          row.className = 'subrow';
+          row.innerHTML = `<span>${sd.studentName || s.id}</span><a href="${sd.text}" target="_blank" style="color:var(--violet);word-break:break-all;">${sd.text}</a>`;
+          subList.appendChild(row);
+        });
+      });
+    } else {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'লিংক অথবা টেক্সট জমা দিন';
+      const btn = document.createElement('button');
+      btn.className = 'submitBtn';
+      btn.textContent = 'জমা দিন';
+      card.appendChild(input);
+      card.appendChild(btn);
+
+      const mySubRef = doc(db, 'assignments', docSnap.id, 'submissions', currentUser.uid);
+      getDoc(mySubRef).then(s => {
+        if(s.exists()){
+          input.value = s.data().text || '';
+          btn.textContent = 'আপডেট করুন';
+        }
+      });
+
+      btn.addEventListener('click', async () => {
+        const text = input.value.trim();
+        if(!text) return;
+        await setDoc(mySubRef, {
+          text, studentName: currentUserData.name, submittedAt: serverTimestamp()
+        });
+        btn.textContent = 'জমা হয়েছে ✓';
+      });
+    }
+    list.appendChild(card);
+  });
+});
+
+document.getElementById('asgSubmit').addEventListener('click', async () => {
+  const title = document.getElementById('asgTitle').value.trim();
+  const description = document.getElementById('asgDesc').value.trim();
+  if(!title || !description) return;
+  await addDoc(collection(db, 'assignments'), {
+    title, description, at: serverTimestamp(), byUid: currentUser.uid
+  });
+  document.getElementById('asgTitle').value = '';
+  document.getElementById('asgDesc').value = '';
 });
 
 /* ---------- Language toggle ---------- */
