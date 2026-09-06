@@ -166,6 +166,7 @@
         <textarea id="input" class="serif" rows="3" placeholder="এখানে টাইপ করা শুরু করুন…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
         <div class="controls">
           <button id="restart">নতুন লেখা</button>
+          <button id="certBtn" style="background:var(--gold);color:var(--ink);border:none;padding:11px 20px;border-radius:6px;font-weight:600;">সার্টিফিকেট ডাউনলোড</button>
         </div>
         <div class="result-banner" id="resultBanner"></div>
       </div>
@@ -713,6 +714,62 @@ inputEl.addEventListener('input', () => {
 });
 
 document.getElementById('restart').addEventListener('click', () => resetTest(true));
+
+document.getElementById('certBtn').addEventListener('click', async () => {
+  if(!currentUserData || !currentUserData.bestWpm){
+    alert('সার্টিফিকেট পেতে আগে অন্তত একবার টাইপিং টেস্ট সম্পূর্ণ করুন।');
+    return;
+  }
+  await document.fonts.ready;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 1000; canvas.height = 700;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#f4f1ea'; ctx.fillRect(0,0,1000,700);
+  ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 8;
+  ctx.strokeRect(20,20,960,660);
+  ctx.strokeStyle = '#5b2f8c'; ctx.lineWidth = 2;
+  ctx.strokeRect(40,40,920,620);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#16224f';
+  ctx.font = '600 22px "Noto Serif Bengali", serif';
+  ctx.fillText('Abdullah Online Zone · Training Center', 500, 110);
+
+  ctx.fillStyle = '#5b2f8c';
+  ctx.font = '700 42px "Noto Serif Bengali", serif';
+  ctx.fillText('সনদপত্র', 500, 190);
+
+  ctx.fillStyle = '#241c38';
+  ctx.font = '400 20px "Noto Serif Bengali", serif';
+  ctx.fillText('এই সনদটি প্রদান করা হলো', 500, 260);
+
+  ctx.font = '700 36px "Noto Serif Bengali", serif';
+  ctx.fillStyle = '#16224f';
+  ctx.fillText(currentUserData.name || '', 500, 330);
+
+  ctx.font = '400 19px "Noto Serif Bengali", serif';
+  ctx.fillStyle = '#241c38';
+  ctx.fillText('টাইপিং টেস্টে অংশগ্রহণ ও কৃতিত্বের জন্য', 500, 380);
+
+  ctx.font = '600 24px "JetBrains Mono", monospace';
+  ctx.fillStyle = '#5b2f8c';
+  ctx.fillText(`সেরা গতি: ${currentUserData.bestWpm} WPM   |   নির্ভুলতা: ${currentUserData.bestAcc || 100}%`, 500, 440);
+
+  const dateStr = new Date().toLocaleDateString('bn-BD');
+  ctx.font = '400 16px "Noto Serif Bengali", serif';
+  ctx.fillStyle = '#6b6180';
+  ctx.fillText('প্রদানের তারিখ: ' + dateStr, 500, 580);
+
+  ctx.font = '400 14px "Noto Serif Bengali", serif';
+  ctx.fillText('Abdullah Online Zone and Training Center', 500, 640);
+
+  const link = document.createElement('a');
+  link.download = 'certificate-' + (currentUserData.name || 'student') + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
 </script>
 </body>
 </html>
