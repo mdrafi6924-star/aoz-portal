@@ -487,12 +487,16 @@ onSnapshot(noticesQuery, (snap) => {
 document.getElementById('noticeSubmit').addEventListener('click', async () => {
   const title = document.getElementById('noticeTitle').value.trim();
   const body = document.getElementById('noticeBody').value.trim();
-  if(!title || !body) return;
-  await addDoc(collection(db, 'notices'), {
-    title, body, at: serverTimestamp(), byUid: currentUser.uid, byName: currentUserData.name
-  });
-  document.getElementById('noticeTitle').value = '';
-  document.getElementById('noticeBody').value = '';
+  if(!title || !body){ alert('শিরোনাম ও বিস্তারিত দুটোই লিখুন'); return; }
+  try{
+    await addDoc(collection(db, 'notices'), {
+      title, body, at: serverTimestamp(), byUid: currentUser.uid, byName: currentUserData.name
+    });
+    document.getElementById('noticeTitle').value = '';
+    document.getElementById('noticeBody').value = '';
+  } catch(err){
+    alert('এরর: ' + err.message);
+  }
 });
 
 /* ---------- Assignments ---------- */
@@ -563,12 +567,16 @@ onSnapshot(assignmentsQuery, (snap) => {
 document.getElementById('asgSubmit').addEventListener('click', async () => {
   const title = document.getElementById('asgTitle').value.trim();
   const description = document.getElementById('asgDesc').value.trim();
-  if(!title || !description) return;
-  await addDoc(collection(db, 'assignments'), {
-    title, description, at: serverTimestamp(), byUid: currentUser.uid
-  });
-  document.getElementById('asgTitle').value = '';
-  document.getElementById('asgDesc').value = '';
+  if(!title || !description){ alert('শিরোনাম ও বিবরণ দুটোই লিখুন'); return; }
+  try{
+    await addDoc(collection(db, 'assignments'), {
+      title, description, at: serverTimestamp(), byUid: currentUser.uid
+    });
+    document.getElementById('asgTitle').value = '';
+    document.getElementById('asgDesc').value = '';
+  } catch(err){
+    alert('এরর: ' + err.message);
+  }
 });
 
 /* ---------- Language toggle ---------- */
